@@ -1,0 +1,76 @@
+# ---- Project artifacts ----
+input/
+schedule.xlsx
+tests/input/
+tests/output/
+
+# ---- Byte-compiled / optimized ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ---- Distribution / packaging ----
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+.eggs/
+MANIFEST
+pip-wheel-metadata/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---- Testing / coverage ----
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+coverage.xml
+*.cover
+nosetests.xml
+
+# ---- Jupyter / IPython ----
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# ---- Editors / IDEs ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- OS cruft ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Excel / Office lock files ----
+~$*.xlsx
+~$*.xls
+~$*.docx
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Solver temp files (PuLP / CBC) ----
+*.lp
+*.mps
+*.sol
+CbcSolver*.log
