@@ -254,7 +254,7 @@ def solve(
                 <= wild_tickets[(m, c)]
             )
 
-    # Objective: lexicographic (balance, then total).
+    # Objective: lexicographic (total first, balance as tiebreaker).
     # Total quests completed by member m:
     member_quests = {
         m: pulp.lpSum(
@@ -268,13 +268,14 @@ def solve(
     for m in members:
         prob += min_member <= member_quests[m]
 
-    # Big weight on min_member to prioritize balance.
-    # Upper bound on a member's quests: number of (c,t) with quests[m,c,t]==1
+    # Scale total_quests high so it dominates; min_member acts only as a
+    # tiebreaker among solutions that achieve the same total.
+    # Upper bound on min_member: max per-member quest count.
     max_per_member = max(
         (sum(1 for c in chars_by_member[m] for t in TARGETS if quests[(m, c, t)] == 1))
         for m in members
     ) or 1
-    prob += (max_per_member + 1) * min_member + total_quests
+    prob += (max_per_member + 1) * total_quests + min_member
 
     solver = pulp.PULP_CBC_CMD(msg=1 if verbose else 0, timeLimit=time_limit_sec)
     prob.solve(solver)

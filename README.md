@@ -6,8 +6,8 @@ spreadsheet with an ordered battle plan that:
 
 1. Always uses exactly 1 ticket per battle.
 2. Fields a team of 4 characters (2 for `双生`), one from each different member.
-3. Maximizes the **minimum** quests completed across members (balance first),
-   then maximizes the total quests completed.
+3. Maximizes **total** quests completed across the team; ties are broken by
+   maximizing the minimum per-member count (soft balance).
 4. Orders battles to minimize per-member character switches (logout/login).
 
 ## Battle targets
@@ -105,9 +105,10 @@ Files written:
 - **Non-`双生` battles** require exactly one character from **each** of the
   teammates. `双生` battles require exactly 2 distinct members to contribute
   one character each (the other 2 sit out, shown as `—`).
-- **Balance**: the objective is lexicographic — first maximize `min_m quests(m)`,
-  then maximize the sum. This yields fair distributions without sacrificing
-  total completion.
+- **Balance**: the objective is lexicographic — first maximize the sum of
+  quests completed, then (as a tiebreaker) maximize `min_m quests(m)`. This
+  produces the highest total first and a fair distribution only when it costs
+  nothing.
 - **Ordering**: after the MILP picks the battle set, a nearest-neighbor heuristic
   (with every battle tried as a start point) orders them to minimize total
   character switches across all members.
