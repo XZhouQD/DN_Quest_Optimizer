@@ -10,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .config import SCHEDULE_SHEET, SUMMARY_SHEET, TARGETS
+from .config import SCHEDULE_SHEET, SUMMARY_SHEET, TARGETS, TARGET_TO_MAP
 from .optimize import Battle
 
 
@@ -61,46 +61,163 @@ def drop_zero_credit_battles(
 def _switch_cost(prev: Battle | None, b: Battle) -> int:
     """Number of member-level character switches when going prev -> b.
 
-    A switch happens when a member participates in both battles with a different
-    character. A member sitting out (only possible for 双生) is free.
+    Wildcards (participant value == None) are treated as "will be filled to
+    match whatever is needed", so they never count as a switch.
     """
     if prev is None:
         return 0
     cost = 0
     for m, c in b.participants.items():
+        if c is None:
+            continue
         pc = prev.participants.get(m)
-        if pc is not None and pc != c:
-            cost += 1
+        if pc is None or pc == c:
+            continue
+        cost += 1
     return cost
 
 
 # Penalty added when every shared member switches characters (full re-team).
-# Large enough to outweigh any realistic single-member switch savings so the
-# ordering heuristics avoid full re-teams whenever possible, but not so huge
-# that it dominates the objective if a full re-team is unavoidable.
+# Full re-team forces a trip through campus to re-team, so this is the
+# heaviest per-transition cost.
 _FULL_RETEAM_PENALTY = 1000
+
+# Penalty for changing maps (targets in different map groups). Cheaper than a
+# full re-team but more expensive than a single character switch, so the
+# heuristics will cluster same-map battles while still allowing a map change
+# to save multiple switches if worthwhile.
+_MAP_CHANGE_PENALTY = 10
 
 
 def _transition_score(prev: Battle | None, b: Battle) -> int:
-    """Switch cost with a heavy penalty when all shared members switch.
+    """Switch cost with penalties for map change and full re-team.
 
-    Used for ordering decisions only; the summary report still counts raw
-    per-member switches via _switch_cost.
+    Costs (additive):
+      * +1 per member who participates in both and switches character
+        (wildcards / None are ignored).
+      * +_MAP_CHANGE_PENALTY if the two battles are in different map groups.
+      * +_FULL_RETEAM_PENALTY if every shared concrete member switches
+        (forces a return to campus to re-team).
     """
     if prev is None:
         return 0
     switches = 0
     shared = 0
     for m, c in b.participants.items():
+        if c is None:
+            continue
         pc = prev.participants.get(m)
-        if pc is not None:
-            shared += 1
-            if pc != c:
-                switches += 1
+        if pc is None:
+            continue
+        shared += 1
+        if pc != c:
+            switches += 1
     score = switches
+    if TARGET_TO_MAP.get(prev.target) != TARGET_TO_MAP.get(b.target):
+        score += _MAP_CHANGE_PENALTY
     if shared > 0 and switches == shared:
         score += _FULL_RETEAM_PENALTY
     return score
+
+
+def _solidify_wildcards(
+    battles: List[Battle], members: List[str], quests: Dict
+) -> None:
+    """In-place: set participants[m] = None for any slot that is neither the
+    battle's ticket source nor a fresh (first-seen) quest-credit for that
+    member at that target.
+
+    After this call, every concrete char in a battle is something the plan
+    _requires_ to be exactly that character; all other slots are wildcards
+    that the ordering heuristic can move freely.
+    """
+    for m in members:
+        covered: set = set()  # (char, target) already used as a credit anchor
+
+        # Pass A: ticket sources — their character is locked; also counts as
+        # coverage if the locked char credits a quest.
+        for b in battles:
+            if m not in b.participants:
+                continue
+            if b.ticket_source[0] == m:
+                c = b.ticket_source[1]
+                b.participants[m] = c
+                if quests.get((m, c, b.target), 0) == 1:
+                    covered.add((c, b.target))
+
+        # Pass B: for non-source slots, keep the char only if it brings a
+        # still-uncovered quest credit.
+        for b in battles:
+            if m not in b.participants:
+                continue
+            if b.ticket_source[0] == m:
+                continue
+            c = b.participants[m]
+            if c is None:
+                continue
+            key = (c, b.target)
+            if quests.get((m, c, b.target), 0) == 1 and key not in covered:
+                covered.add(key)
+                # keep concrete
+            else:
+                b.participants[m] = None  # wildcard
+
+
+def _fill_wildcards(
+    battles: List[Battle],
+    members: List[str],
+    chars_by_member: Dict[str, List[str]],
+    quests: Dict | None = None,
+) -> None:
+    """Replace every wildcard participant slot (None) with a concrete char
+    from the member's roster, chosen to minimize switches.
+
+    Strategy per member: walk their participations in final order.
+      1. If previous concrete char exists and is in roster, reuse it
+         (no switch). This is the dominant case.
+      2. Else, peek ahead to the next concrete char and reuse it
+         (saves the upcoming forced switch).
+      3. Else, if `quests` is provided, prefer a char that credits a quest
+         at this target (may enable later battles to be dropped).
+      4. Fall back to roster[0].
+    """
+    for m in members:
+        roster = list(chars_by_member.get(m, []))
+        if not roster:
+            continue
+
+        idx = [i for i, b in enumerate(battles) if m in b.participants]
+        chars: List[Optional[str]] = [battles[i].participants[m] for i in idx]
+        targets = [battles[i].target for i in idx]
+
+        prev_c: Optional[str] = None
+        for k in range(len(chars)):
+            if chars[k] is None:
+                choice: Optional[str] = None
+                if prev_c is not None:
+                    choice = prev_c
+                else:
+                    # No previous concrete char — peek ahead.
+                    choice = next(
+                        (chars[j] for j in range(k + 1, len(chars))
+                         if chars[j] is not None),
+                        None,
+                    )
+                    if choice is None and quests is not None:
+                        # Prefer a quest-crediting char at this target.
+                        t = targets[k]
+                        choice = next(
+                            (c for c in roster
+                             if quests.get((m, c, t), 0) == 1),
+                            None,
+                        )
+                    if choice is None:
+                        choice = roster[0]
+                chars[k] = choice
+            prev_c = chars[k]
+
+        for k, i in enumerate(idx):
+            battles[i].participants[m] = chars[k]  # type: ignore[assignment]
 
 
 def _break_full_reteams(battles: List[Battle]) -> List[Battle]:
@@ -163,9 +280,12 @@ def order_battles(battles: List[Battle]) -> List[Battle]:
         total = 0
         while remaining:
             prev = seq[-1]
-            # Pick the remaining battle with minimum switch cost (ties: same target)
+            # Pick remaining battle with minimum transition score. Tie-break:
+            # same target > same map > different map.
             def key(b: Battle):
-                return (_transition_score(prev, b), 0 if b.target == prev.target else 1)
+                same_target = 0 if b.target == prev.target else 1
+                same_map = 0 if TARGET_TO_MAP.get(b.target) == TARGET_TO_MAP.get(prev.target) else 1
+                return (_transition_score(prev, b), same_map, same_target)
             nxt = min(remaining, key=key)
             total += _transition_score(prev, nxt)
             remaining.remove(nxt)
@@ -209,8 +329,18 @@ def finalize_schedule(
     prev_n = -1
     for _ in range(50):
         battles = drop_zero_credit_battles(battles, quests)
-        battles = order_battles(battles)
-        reduce_switches(battles, members, quests, chars_by_member)
+        if chars_by_member is not None:
+            # Wildcard flow: erase non-forced chars, order with wildcard
+            # awareness, then fill wildcards to match neighbors.
+            _solidify_wildcards(battles, members, quests)
+            battles = order_battles(battles)
+            _fill_wildcards(battles, members, chars_by_member, quests)
+            # Filled wildcards may coincidentally credit extra quests, which
+            # can make other battles redundant — drop again on filled state.
+            battles = drop_zero_credit_battles(battles, quests)
+        else:
+            battles = order_battles(battles)
+            reduce_switches(battles, members, quests, chars_by_member)
         battles = _break_full_reteams(battles)
         if len(battles) == prev_n and _zero_count(battles) == 0:
             break
@@ -219,8 +349,14 @@ def finalize_schedule(
     # One last defensive filter: drop any residual zero-credit battle.
     # (drop_zero_credit_battles already does this; cheap to double-check.)
     battles = drop_zero_credit_battles(battles, quests)
-    # Final ordering polish: ordering uses the now-finalized filler chars.
-    battles = order_battles(battles)
+    # Final polish: re-solidify, re-order, re-fill so ordering uses only
+    # required chars and fillers match their neighbors.
+    if chars_by_member is not None:
+        _solidify_wildcards(battles, members, quests)
+        battles = order_battles(battles)
+        _fill_wildcards(battles, members, chars_by_member, quests)
+    else:
+        battles = order_battles(battles)
     return battles
 
 

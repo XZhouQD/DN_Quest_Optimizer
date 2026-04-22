@@ -13,6 +13,21 @@ TEAM_SIZE = {t: (2 if t == "双生" else 4) for t in TARGETS}
 # Wildcard ticket column name. A 选择 ticket is valid for any target EXCEPT 双生.
 WILDCARD = "选择"
 
+# Map groups: targets sharing the same map. Moving between battles in the same
+# map is essentially free; crossing groups requires a map change (time cost).
+# A re-team (full character swap) forces a detour through campus, so it is
+# penalized separately and more heavily than a simple map change.
+MAP_GROUPS = [
+    ("狮蝎", "海龙"),
+    ("主教", "K博士", "巨人"),
+    ("火山", "守卫", "迷雾"),
+    ("代达罗斯", "格拉诺"),
+    ("卡伊伦",),
+    ("台风金",),
+    ("双生",),
+]
+TARGET_TO_MAP = {t: i for i, grp in enumerate(MAP_GROUPS) for t in grp}
+
 # Character-name column label used in the templates.
 CHARACTER_COL = "角色"
 
