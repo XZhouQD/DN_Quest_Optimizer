@@ -1,5 +1,6 @@
 # ---- Project artifacts ----
 input/
+input_*/
 schedule.xlsx
 tests/input/
 tests/output/

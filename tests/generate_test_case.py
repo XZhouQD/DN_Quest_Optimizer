@@ -30,7 +30,7 @@ from src.config import (
     CHAR_SHEET, QUEST_SHEET,
 )
 from src.optimize import solve, _load_inputs
-from src.schedule import order_battles, write_schedule_with_quests
+from src.schedule import finalize_schedule, write_schedule_with_quests
 
 SEED = 42
 CHARS_PER_MEMBER = 10
@@ -103,17 +103,22 @@ def run_test(seed: int = SEED, time_limit: int = 60) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     battles, members = solve(input_dir, time_limit_sec=time_limit)
-    battles = order_battles(battles)
-    _, _, _, _, quests = _load_inputs(input_dir)
+    _, chars_by_member, _, _, quests = _load_inputs(input_dir)
+    battles = finalize_schedule(battles, members, quests, chars_by_member)
     out_path = output_dir / "schedule.xlsx"
     write_schedule_with_quests(battles, members, quests, out_path)
 
     total_tickets_used = len(battles)
-    total_quests = sum(b.completed for b in battles)
+    # Count each weekly quest at most once.
+    credited: set = set()
     per_member_q = {m: 0 for m in members}
     for b in battles:
         for m, c in b.participants.items():
-            per_member_q[m] += quests.get((m, c, b.target), 0)
+            key = (m, c, b.target)
+            if quests.get(key, 0) == 1 and key not in credited:
+                credited.add(key)
+                per_member_q[m] += 1
+    total_quests = sum(per_member_q.values())
 
     result = {
         "seed": seed,

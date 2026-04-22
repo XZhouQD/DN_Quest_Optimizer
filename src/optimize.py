@@ -132,28 +132,21 @@ def _upper_bound_slots(
     wild_tickets: Dict,
     target: str,
 ) -> int:
-    """Cheap upper bound on number of battles possible at target t.
+    """Upper bound on number of battles possible at target t.
 
-    Limited by ticket supply and by team composition constraints.
+    A battle consumes exactly one ticket (dedicated OR wildcard if t != 双生).
+    The ticket contributor is a single participant — all other participants
+    do NOT need to hold a ticket. So ticket supply is the only supply limit.
+
+    Team-composition only becomes binding when a member has fewer than the
+    required number of characters (1 for non-双生; handled implicitly by the
+    MILP since the pool is always large enough in practice).
     """
-    k = TEAM_SIZE[target]
-    # Total tickets available at t (dedicated + wildcard, unless target is 双生)
-    total_tickets = sum(tickets[(m, c, target)] for m in members for c in chars_by_member[m])
-    if target != "双生":
-        total_tickets += sum(wild_tickets[(m, c)] for m in members for c in chars_by_member[m])
-    # Per-member capacity: each battle needs 1 char from that member (non-双生) or
-    # the member may sit out (双生). Be loose to let MILP decide.
-    per_member = {
-        m: sum(1 for c in chars_by_member[m] if tickets[(m, c, target)] > 0) or len(chars_by_member[m])
-        for m in members
-    }
+    dedicated = sum(tickets[(m, c, target)] for m in members for c in chars_by_member[m])
     if target == "双生":
-        # Need 2 distinct members per battle; sum of per_member / 2 is an upper bound.
-        cap = sum(per_member.values()) // 2
-    else:
-        # Need 1 char per member; each member may appear in many battles (different chars).
-        cap = min(per_member.values()) if per_member else 0
-    return max(0, min(total_tickets, cap))
+        return dedicated
+    wildcards = sum(wild_tickets[(m, c)] for m in members for c in chars_by_member[m])
+    return dedicated + wildcards
 
 
 def solve(
@@ -255,12 +248,24 @@ def solve(
             )
 
     # Objective: lexicographic (total first, balance as tiebreaker).
-    # Total quests completed by member m:
+    # `done[m,c,t]` = 1 if the weekly quest (m,c,t) is actually completed.
+    # A quest counts at most once regardless of how many battles (m,c) joins
+    # at target t.
+    done: Dict[Tuple[str, str, str], pulp.LpVariable] = {}
+    for m in members:
+        for c in chars_by_member[m]:
+            for t in TARGETS:
+                if quests[(m, c, t)] == 1:
+                    v = pulp.LpVariable(f"done_{m}_{c}_{t}", cat="Binary")
+                    done[(m, c, t)] = v
+                    # Can only be done if (m,c) participates in at least one slot at t
+                    prob += v <= pulp.lpSum(p[(t, s, m, c)] for s in slots[t])
+
     member_quests = {
-        m: pulp.lpSum(
-            p[(t, s, m, c)] * quests[(m, c, t)]
-            for t in TARGETS for s in slots[t] for c in chars_by_member[m]
-        )
+        m: pulp.lpSum(done[(m, c, t)]
+                      for c in chars_by_member[m]
+                      for t in TARGETS
+                      if (m, c, t) in done)
         for m in members
     }
     total_quests = pulp.lpSum(member_quests.values())
