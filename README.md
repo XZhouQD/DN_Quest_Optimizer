@@ -1,131 +1,124 @@
 # DN Team Quest Scheduler
 
-Optimize weekly battle-quest scheduling for a 4-player team. The tool reads
-two spreadsheets (tickets + weekly quests), runs a MILP, and writes a third
-spreadsheet with an ordered battle plan that:
+[English](README.md) | [中文](README.zh-CN.md)
 
-1. Always uses exactly 1 ticket per battle.
-2. Fields a team of 4 characters (2 for `双生`), one from each different member.
-3. Maximizes **total** quests completed across the team; ties are broken by
-   maximizing the minimum per-member count (soft balance).
-4. Orders battles to minimize per-member character switches (logout/login).
+Optimize weekly battle-quest scheduling from Excel input files.
+
+The tool reads tickets + weekly quests, solves a MILP, and writes an ordered
+schedule that:
+
+1. Uses exactly 1 ticket per battle.
+2. Maximizes total completed weekly quests first.
+3. Uses fairness as a tiebreaker (maximize the minimum per-member completed quests).
+4. Reduces character switching and avoids costly full re-team transitions.
+5. Considers map changes in ordering.
 
 ## Battle targets
 
 `狮蝎, 海龙, K博士, 主教, 巨人, 守卫, 火山, 迷雾, 卡伊伦, 格拉诺, 代达罗斯, 台风金, 双生`
 
-Team size is 4 for all targets except `双生` (2).
+## Dynamic members
 
-## Inputs
+Members are discovered from filename pairs in the input directory:
 
-Each of the 4 teammates (`小C`, `暗部`, `桃核`, `蹦蹦`) fills in **two** files
-about their own account only. Member identity is derived from the **file name**,
-so there is no `member` column inside the sheets.
+- `<member>_票.xlsx`
+- `<member>_委托.xlsx`
 
-All 8 files live in the same directory (default: `templates/`).
+No fixed member list is required in code.
 
-### `<member>_票.xlsx` — sheet **Characters** (tickets)
+If only 3 members are provided, non-`双生` battles are automatically treated as
+3-player battles. `双生` remains 2-player.
 
-| Column      | Meaning                                                                           |
-| ----------- | --------------------------------------------------------------------------------- |
-| `角色`      | Character name (unique within this file).                                         |
-| `<T>`       | One column per battle target; integer weekly tickets (0, 1, 2, ...).              |
-| `选择`      | Wildcard tickets — each usable for any target **except `双生`**.                  |
+## Input format
 
-### `<member>_委托.xlsx` — sheet **Quests** (weekly quest flags)
+### `<member>_票.xlsx` (sheet: `Characters`)
 
-| Column      | Meaning                                                                    |
-| ----------- | -------------------------------------------------------------------------- |
-| `角色`      | Must match the character names in `<member>_票.xlsx`.                      |
-| `<T>`       | `1` if this target is a weekly quest for the character; `0` otherwise.     |
+| Column | Meaning |
+| --- | --- |
+| `角色` | Character name (unique in this file) |
+| `<target>` | Integer ticket count for this target |
+| `选择` | Wildcard tickets (valid for all targets except `双生`) |
 
-Each generated template ships with at least 15 blank placeholder rows.
+### `<member>_委托.xlsx` (sheet: `Quests`)
+
+| Column | Meaning |
+| --- | --- |
+| `角色` | Must match characters in `<member>_票.xlsx` |
+| `<target>` | `1` means this target is a weekly quest for this character, else `0` |
+
+Empty numeric cells are accepted and treated as `0`.
 
 ## Usage
 
 ```powershell
-# 1. Install deps (one time)
+# Install dependencies
 pip install -r requirements.txt
 
-# 2. Double-click run.bat  — OR —  run: python run.py
-#    On the first run an `input/` folder is created and the 8 empty templates
-#    are copied into it. Fill them in, then run again.
+# First run: create and seed input/ from templates if needed
+python run.py
 
-# 3. Once input/ contains your data, double-click run.bat again to produce
-#    schedule.xlsx in the project root.
+# Or run directly
+python -m src.main --input-dir input --out schedule.xlsx
 ```
 
-Advanced (use a different folder):
+## Output workbook
+
+`schedule.xlsx` contains:
+
+- `Schedule` sheet
+  - ordered battles
+  - switch-highlighted participant cells (orange)
+  - quest-credit participant names in bold
+  - target background coloring for map-group separation (two alternating colors: light grey and light pink)
+- `Summary` sheet
+  - per-member completed quests, battles, distinct characters, and switches
+- `Legend` sheet
+  - explanations of symbols and color usage
+
+## Scheduling model highlights
+
+- Ticket constraints are strict (dedicated + wildcard stock never goes negative).
+- Quest credit is counted once per `(member, character, target)` per week.
+- Objective is lexicographic: total first, balance second.
+- Post-processing removes zero-credit battles and optimizes order.
+- Ordering cost combines:
+  - character switch cost
+  - map-change penalty
+  - strong penalty for full re-team transitions
+
+## Test and validation
 
 ```powershell
-python -m src.main --input-dir some/other/dir --out schedule.xlsx
-```
-
-## Test suite
-
-A deterministic end-to-end test lives under `tests/`. It builds a small
-reproducible input set and runs the solver against it:
-
-```powershell
+# deterministic synthetic test generation
 python -m tests.generate_test_case
+
+# validate produced schedule against input
+python -m tests.validate_schedule --input-dir tests/input --schedule tests/output/schedule.xlsx
+
+# dynamic feature regression (dynamic members, blanks-as-zero, target colors)
+python -m tests.test_dynamic_features
 ```
-
-Rules of the test case (seeded, so identical every run):
-* 10 characters per member.
-* Only the first character of each member has tickets
-  (a random integer in `[5, 12]` dedicated tickets distributed across random
-  targets, plus **2** `选择` wildcard tickets). Other characters have none.
-* Each character has a random number (0–3) of weekly quests.
-
-Files written:
-* `tests/input/<member>_票.xlsx`, `tests/input/<member>_委托.xlsx`
-* `tests/output/schedule.xlsx`
-
-## Output
-
-`schedule.xlsx`:
-
-- **Schedule** sheet: one row per battle, in execution order. Columns:
-  `order | target | ticket_source | <each member> | quests_completed`.
-  Cells where a member changes character vs the previous battle are highlighted
-  in orange, so you can eyeball switch points.
-- **Summary** sheet: per-member stats (quests completed, battles joined,
-  distinct characters used, character switches). Plus overall totals.
-- **Legend** sheet: key to the colors and symbols.
-
-## Modeling notes / assumptions
-
-- **Ticket model**: tickets are tracked per `(character, target)` and may be any
-  non-negative integer — a character with 3 tickets for `火山` can legitimately
-  contribute to 3 separate `火山` battles. In addition, each character has a
-  pool of **`选择` wildcard tickets** that may substitute for any target except
-  `双生`. The schedule's `ticket_kind` column shows which kind was spent.
-- **Quest credit**: a participant "completes a quest" iff the battle's target
-  is flagged `1` on their row in `quests.xlsx`.
-- **Non-`双生` battles** require exactly one character from **each** of the
-  teammates. `双生` battles require exactly 2 distinct members to contribute
-  one character each (the other 2 sit out, shown as `—`).
-- **Balance**: the objective is lexicographic — first maximize the sum of
-  quests completed, then (as a tiebreaker) maximize `min_m quests(m)`. This
-  produces the highest total first and a fair distribution only when it costs
-  nothing.
-- **Ordering**: after the MILP picks the battle set, a nearest-neighbor heuristic
-  (with every battle tried as a start point) orders them to minimize total
-  character switches across all members.
 
 ## Project layout
 
-```
+```text
 DN_Tools/
-├── requirements.txt
 ├── README.md
-├── run.bat                    # double-click launcher (Windows)
-├── run.py                     # bootstraps input/ and runs the optimizer
-├── generate_templates.py      # (optional) (re)generate empty templates/
-└── src/
-    ├── config.py              # targets, team sizes, member list, filename suffixes
-    ├── templates.py           # builds the 4 × 2 per-member templates
-    ├── optimize.py            # MILP model (PuLP + CBC)
-    ├── schedule.py            # ordering heuristic + xlsx writer
-    └── main.py                # CLI
+├── README.zh-CN.md
+├── requirements.txt
+├── run.py
+├── run.bat
+├── generate_templates.py
+├── src/
+│   ├── config.py
+│   ├── optimize.py
+│   ├── schedule.py
+│   ├── templates.py
+│   └── main.py
+└── tests/
+    ├── generate_test_case.py
+    ├── validate_schedule.py
+    ├── test_dynamic_features.py
+    ├── count_reteams.py
+    └── show_reteams.py
 ```
