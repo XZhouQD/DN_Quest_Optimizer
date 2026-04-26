@@ -19,7 +19,7 @@ import pulp
 
 from .config import (
     TARGETS, TEAM_SIZE, CHAR_SHEET, QUEST_SHEET, WILDCARD, CHARACTER_COL,
-    MEMBERS, TICKET_SUFFIX, QUEST_SUFFIX,
+    TICKET_SUFFIX, QUEST_SUFFIX,
 )
 
 
@@ -59,13 +59,26 @@ def _load_inputs(
     expected_ticket_cols = [CHARACTER_COL] + list(TARGETS) + [WILDCARD]
     expected_quest_cols = [CHARACTER_COL] + list(TARGETS)
 
-    for member in MEMBERS:
+    # Discover members from filename pairs in input_dir.
+    #   <member>_票.xlsx and <member>_委托.xlsx
+    ticket_members: set[str] = set()
+    quest_members: set[str] = set()
+    for p in input_dir.glob(f"*{TICKET_SUFFIX}.xlsx"):
+        ticket_members.add(p.stem[: -len(TICKET_SUFFIX)])
+    for p in input_dir.glob(f"*{QUEST_SUFFIX}.xlsx"):
+        quest_members.add(p.stem[: -len(QUEST_SUFFIX)])
+
+    paired_members = sorted(ticket_members & quest_members)
+    missing_ticket = sorted(quest_members - ticket_members)
+    missing_quest = sorted(ticket_members - quest_members)
+    for member in missing_ticket:
+        print(f"[warn] skipping member '{member}': missing {member}{TICKET_SUFFIX}.xlsx")
+    for member in missing_quest:
+        print(f"[warn] skipping member '{member}': missing {member}{QUEST_SUFFIX}.xlsx")
+
+    for member in paired_members:
         ticket_path = input_dir / f"{member}{TICKET_SUFFIX}.xlsx"
         quest_path = input_dir / f"{member}{QUEST_SUFFIX}.xlsx"
-        if not ticket_path.exists() or not quest_path.exists():
-            print(f"[warn] skipping member '{member}': "
-                  f"missing {ticket_path.name if not ticket_path.exists() else quest_path.name}")
-            continue
 
         ch = pd.read_excel(ticket_path, sheet_name=CHAR_SHEET)
         qu = pd.read_excel(quest_path, sheet_name=QUEST_SHEET)
@@ -149,6 +162,15 @@ def _upper_bound_slots(
     return dedicated + wildcards
 
 
+def _effective_team_size(target: str, member_count: int) -> int:
+    """Battle size allowed by the loaded team.
+
+    Normal targets want 4 players, 双生 wants 2, but if the input directory
+    only contains 3 members then normal targets become 3-player battles.
+    """
+    return min(TEAM_SIZE[target], member_count)
+
+
 def solve(
     input_dir: str | Path,
     time_limit_sec: int = 60,
@@ -190,7 +212,7 @@ def solve(
 
     # Constraints
     for t in TARGETS:
-        k = TEAM_SIZE[t]
+        k = _effective_team_size(t, len(members))
         for s in slots[t]:
             a = active[(t, s)]
             # Team size: exactly k participants when active, 0 otherwise
@@ -201,7 +223,8 @@ def solve(
                 prob += pulp.lpSum(p[(t, s, m, c)] for c in chars_by_member[m]) <= 1
 
             if t != "双生":
-                # Every member must contribute exactly 1 when active
+                # Every loaded member must contribute exactly 1 when active.
+                # With a 3-member input, non-双生 battles are 3-player battles.
                 for m in members:
                     prob += pulp.lpSum(p[(t, s, m, c)] for c in chars_by_member[m]) == a
             # For 双生 (k=2), the team-size constraint plus "≤1 per member" already

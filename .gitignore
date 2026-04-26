@@ -4,6 +4,7 @@ input_*/
 schedule.xlsx
 tests/input/
 tests/output/
+*.xlsx
 
 # ---- Byte-compiled / optimized ----
 __pycache__/

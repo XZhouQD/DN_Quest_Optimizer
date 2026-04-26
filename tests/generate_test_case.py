@@ -26,7 +26,7 @@ import pandas as pd
 
 from src.config import (
     TARGETS, WILDCARD, CHARACTER_COL,
-    MEMBERS, TICKET_SUFFIX, QUEST_SUFFIX,
+    TICKET_SUFFIX, QUEST_SUFFIX,
     CHAR_SHEET, QUEST_SHEET,
 )
 from src.optimize import solve, _load_inputs
@@ -37,6 +37,7 @@ CHARS_PER_MEMBER = 10
 TICKETS_MIN, TICKETS_MAX = 5, 12
 WILDCARD_COUNT = 2
 QUESTS_MIN, QUESTS_MAX = 0, 3
+TEST_MEMBERS = ["小C", "暗部", "桃核", "蹦蹦"]
 
 
 def _distribute_tickets(total: int, n_buckets: int, rng: random.Random) -> list[int]:
@@ -51,7 +52,7 @@ def build_inputs(input_dir: Path, seed: int = SEED) -> None:
     input_dir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
 
-    for m in MEMBERS:
+    for m in TEST_MEMBERS:
         chars = [f"{m}_C{i+1}" for i in range(CHARS_PER_MEMBER)]
 
         ticket_rows = []

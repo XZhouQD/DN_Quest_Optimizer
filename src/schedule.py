@@ -550,6 +550,8 @@ HEADER_FILL = PatternFill("solid", fgColor="FFD9E1F2")
 HEADER_FONT = Font(bold=True)
 SWITCH_FILL = PatternFill("solid", fgColor="FFFCE4D6")  # highlight switches
 BOLD_FONT = Font(bold=True)
+TARGET_GROUP_FILL_A = PatternFill("solid", fgColor="FFF2F2F2")  # light grey
+TARGET_GROUP_FILL_B = PatternFill("solid", fgColor="FFFFE6EA")  # light pink
 
 
 
@@ -612,6 +614,11 @@ def write_schedule(
             row.append(b.participants.get(m, "—"))
         row.append(bc)
         ws.append(row)
+        # Alternate target cell colors by map group (2 colors only).
+        g = TARGET_TO_MAP.get(b.target, 0)
+        ws.cell(row=ws.max_row, column=2).fill = (
+            TARGET_GROUP_FILL_A if (g % 2 == 0) else TARGET_GROUP_FILL_B
+        )
         # Bold the participant cells where this battle credits a quest.
         for j, m in enumerate(members, start=5):
             if m in bm_set:

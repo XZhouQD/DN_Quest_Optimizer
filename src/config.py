@@ -37,8 +37,8 @@ QUEST_SHEET = "Quests"
 SCHEDULE_SHEET = "Schedule"
 SUMMARY_SHEET = "Summary"
 
-# Team members (fixed). Filenames are derived from these names.
-MEMBERS = ["小C", "暗部", "桃核", "蹦蹦"]
+# Members are discovered dynamically from input filenames:
+#   <member>_票.xlsx and <member>_委托.xlsx
 
 # File-name suffixes used to identify which spreadsheet belongs to whom.
 #   <member>_票.xlsx   -> tickets input

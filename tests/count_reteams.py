@@ -15,8 +15,11 @@ MAP_GROUPS = [
 TARGET_TO_MAP = {t: i for i, g in enumerate(MAP_GROUPS) for t in g}
 
 path = sys.argv[1] if len(sys.argv) > 1 else "260422_v2.xlsx"
-members = ['小C', '暗部', '桃核', '蹦蹦']
 s = pd.read_excel(path, sheet_name='Schedule')
+members = [
+    c for c in s.columns
+    if c not in {"order", "target", "ticket_kind", "ticket_source", "quests_completed"}
+]
 print(f'file: {path}')
 print(f'battles: {len(s)}, zero-quest: {(s["quests_completed"]==0).sum()}')
 

@@ -3,8 +3,11 @@ import sys
 import pandas as pd
 
 path = sys.argv[1] if len(sys.argv) > 1 else "260422_v3.xlsx"
-members = ['小C', '暗部', '桃核', '蹦蹦']
 s = pd.read_excel(path, sheet_name='Schedule')
+members = [
+    c for c in s.columns
+    if c not in {"order", "target", "ticket_kind", "ticket_source", "quests_completed"}
+]
 
 for i in range(1, len(s)):
     shared = sw = 0

@@ -24,8 +24,10 @@ from openpyxl.comments import Comment
 
 from .config import (
     CHAR_SHEET, QUEST_SHEET, TARGETS, WILDCARD, CHARACTER_COL,
-    MEMBERS, TICKET_SUFFIX, QUEST_SUFFIX, PLACEHOLDER_ROWS,
+    TICKET_SUFFIX, QUEST_SUFFIX, PLACEHOLDER_ROWS,
 )
+
+DEFAULT_TEMPLATE_MEMBERS = ["小C", "暗部", "桃核", "蹦蹦"]
 
 HEADER_FILL = PatternFill("solid", fgColor="FFD9E1F2")
 PLACEHOLDER_FILL = PatternFill("solid", fgColor="FFF2F2F2")
@@ -102,13 +104,17 @@ def build_quest_file(member: str, path: Path) -> None:
     wb.save(path)
 
 
-def main(out_dir: str | Path = "templates") -> None:
+def main(
+    out_dir: str | Path = "templates",
+    members: list[str] | None = None,
+) -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    for member in MEMBERS:
+    members = members or DEFAULT_TEMPLATE_MEMBERS
+    for member in members:
         build_ticket_file(member, out / f"{member}{TICKET_SUFFIX}.xlsx")
         build_quest_file(member, out / f"{member}{QUEST_SUFFIX}.xlsx")
-    print(f"Wrote {len(MEMBERS) * 2} template files to {out.resolve()}")
+    print(f"Wrote {len(members) * 2} template files to {out.resolve()}")
 
 
 if __name__ == "__main__":

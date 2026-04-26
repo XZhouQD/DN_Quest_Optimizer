@@ -6,7 +6,8 @@ Usage:
 
 Checks for every battle row, in order:
   1. Target is one of the known TARGETS.
-  2. Team size matches TEAM_SIZE (4 for all, 2 for 双生).
+  2. Team size matches the effective TEAM_SIZE for the loaded input members
+      (normally 4, but 3 if only 3 members are present; 双生 remains 2).
   3. Each participant is one distinct member's real character (exists in that
      member's ticket file).
   4. For non-双生 battles: every member contributes exactly one character.
@@ -29,11 +30,15 @@ import pandas as pd
 
 from src.config import (
     TARGETS, TEAM_SIZE, WILDCARD, CHARACTER_COL,
-    MEMBERS, TICKET_SUFFIX, QUEST_SUFFIX, CHAR_SHEET, QUEST_SHEET,
+    TICKET_SUFFIX, QUEST_SUFFIX, CHAR_SHEET, QUEST_SHEET,
     SCHEDULE_SHEET,
 )
 
 SITOUT_MARK = "—"
+
+
+def _effective_team_size(target: str, member_count: int) -> int:
+    return min(TEAM_SIZE[target], member_count)
 
 
 def _load_input(input_dir: Path) -> Tuple[
@@ -50,11 +55,16 @@ def _load_input(input_dir: Path) -> Tuple[
     wild_tickets: Dict[Tuple[str, str], int] = {}
     quests: Dict[Tuple[str, str, str], int] = {}
 
-    for m in MEMBERS:
+    ticket_members: set[str] = set()
+    quest_members: set[str] = set()
+    for p in input_dir.glob(f"*{TICKET_SUFFIX}.xlsx"):
+        ticket_members.add(p.stem[: -len(TICKET_SUFFIX)])
+    for p in input_dir.glob(f"*{QUEST_SUFFIX}.xlsx"):
+        quest_members.add(p.stem[: -len(QUEST_SUFFIX)])
+
+    for m in sorted(ticket_members & quest_members):
         tp = input_dir / f"{m}{TICKET_SUFFIX}.xlsx"
         qp = input_dir / f"{m}{QUEST_SUFFIX}.xlsx"
-        if not tp.exists() or not qp.exists():
-            continue
         ch = pd.read_excel(tp, sheet_name=CHAR_SHEET).dropna(subset=[CHARACTER_COL])
         qu = pd.read_excel(qp, sheet_name=QUEST_SHEET).dropna(subset=[CHARACTER_COL])
         ch[CHARACTER_COL] = ch[CHARACTER_COL].astype(str).str.strip()
@@ -119,7 +129,7 @@ def validate(input_dir: Path, schedule_path: Path) -> bool:
             err(f"unknown target '{target}'")
             continue
 
-        k = TEAM_SIZE[target]
+        k = _effective_team_size(target, len(members))
 
         # 2+3+4. Participants
         participants: Dict[str, str] = {}
