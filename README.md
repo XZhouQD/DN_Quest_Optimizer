@@ -48,6 +48,10 @@ If only 3 members are provided, non-`双生` battles are automatically treated a
 
 Empty numeric cells are accepted and treated as `0`.
 
+Generated templates intentionally leave fillable numeric cells blank, add
+vertical column borders, and use alternating row colors to make manual editing
+easier.
+
 ## Usage
 
 ```powershell

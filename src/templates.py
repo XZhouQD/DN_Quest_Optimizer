@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
 
@@ -30,9 +30,14 @@ from .config import (
 DEFAULT_TEMPLATE_MEMBERS = ["小C", "暗部", "桃核", "蹦蹦"]
 
 HEADER_FILL = PatternFill("solid", fgColor="FFD9E1F2")
-PLACEHOLDER_FILL = PatternFill("solid", fgColor="FFF2F2F2")
+ROW_FILL_A = PatternFill("solid", fgColor="FFFFFFFF")
+ROW_FILL_B = PatternFill("solid", fgColor="FFFFE6EA")
 HEADER_FONT = Font(bold=True)
 INFO_FONT = Font(italic=True, color="FF666666")
+VERTICAL_BORDER = Border(
+    left=Side(style="thin", color="FFA6A6A6"),
+    right=Side(style="thin", color="FFA6A6A6"),
+)
 
 
 def _style_header(ws, ncols: int) -> None:
@@ -41,6 +46,7 @@ def _style_header(ws, ncols: int) -> None:
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center")
+        cell.border = VERTICAL_BORDER
     ws.freeze_panes = "B2"
     for col in range(1, ncols + 1):
         ws.column_dimensions[get_column_letter(col)].width = 6
@@ -48,12 +54,21 @@ def _style_header(ws, ncols: int) -> None:
 
 
 def _add_placeholder_rows(ws, ncols: int, n_rows: int) -> None:
-    """Emit `n_rows` blank rows below the header, with 0s in numeric cells."""
-    for _ in range(n_rows):
-        row = [""] + [0] * (ncols - 1)
+    """Emit blank fillable rows below the header.
+
+    Numeric cells are intentionally blank; the input reader treats blanks as 0.
+    Rows use alternating fills, and every cell gets vertical borders so columns
+    are easy to follow while filling the workbook by hand.
+    """
+    for i in range(n_rows):
+        row = [""] * ncols
         ws.append(row)
+        fill = ROW_FILL_A if i % 2 == 0 else ROW_FILL_B
         for col in range(1, ncols + 1):
-            ws.cell(row=ws.max_row, column=col).fill = PLACEHOLDER_FILL
+            cell = ws.cell(row=ws.max_row, column=col)
+            cell.fill = fill
+            cell.border = VERTICAL_BORDER
+            cell.alignment = Alignment(horizontal="center")
 
 
 def build_ticket_file(member: str, path: Path) -> None:

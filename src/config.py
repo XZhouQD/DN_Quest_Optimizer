@@ -47,4 +47,4 @@ TICKET_SUFFIX = "_票"
 QUEST_SUFFIX = "_委托"
 
 # Minimum number of blank placeholder rows to emit in each template.
-PLACEHOLDER_ROWS = 15
+PLACEHOLDER_ROWS = 20
