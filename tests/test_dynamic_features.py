@@ -100,18 +100,28 @@ def main() -> None:
         assert m in headers, f"missing dynamic member column: {m}"
     assert "小C" not in headers, "legacy fixed member leaked into schedule columns"
 
-    # Target-cell fill color should alternate by map-group parity.
+    # Target-cell fill color should alternate by contiguous map block in schedule order.
     color_a = "FFF2F2F2"
     color_b = "FFFFE6EA"
     seen = set()
+    prev_map = None
+    prev_fill = None
     for r in range(2, ws.max_row + 1):
         target = ws.cell(row=r, column=2).value
         fill_rgb = ws.cell(row=r, column=2).fill.fgColor.rgb
-        expected = color_a if TARGET_TO_MAP.get(target, 0) % 2 == 0 else color_b
-        assert fill_rgb == expected, (
-            f"target color mismatch at row {r}: target={target} fill={fill_rgb} expected={expected}"
-        )
+        current_map = TARGET_TO_MAP.get(target, -1)
+        if prev_map is not None:
+            if current_map == prev_map:
+                assert fill_rgb == prev_fill, (
+                    f"same-map target block changed color at row {r}: target={target}"
+                )
+            else:
+                assert fill_rgb != prev_fill, (
+                    f"map switch did not change color at row {r}: target={target}"
+                )
         seen.add(fill_rgb)
+        prev_map = current_map
+        prev_fill = fill_rgb
 
     assert seen.issubset({color_a, color_b}), f"unexpected target fill colors: {seen}"
 

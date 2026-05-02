@@ -607,6 +607,9 @@ def write_schedule(
     ws.freeze_panes = "B2"
 
     prev: Battle | None = None
+    prev_map_group: int | None = None
+    target_fill_idx = 0
+    target_fills = [TARGET_GROUP_FILL_A, TARGET_GROUP_FILL_B]
     for i, (b, bc, bm_set) in enumerate(zip(battles, battle_completed, bold_members), start=1):
         ticket_src = f"{b.ticket_source[0]}:{b.ticket_source[1]}" if b.ticket_source[0] else ""
         row = [i, b.target, b.ticket_kind, ticket_src]
@@ -614,11 +617,15 @@ def write_schedule(
             row.append(b.participants.get(m, "—"))
         row.append(bc)
         ws.append(row)
-        # Alternate target cell colors by map group (2 colors only).
-        g = TARGET_TO_MAP.get(b.target, 0)
-        ws.cell(row=ws.max_row, column=2).fill = (
-            TARGET_GROUP_FILL_A if (g % 2 == 0) else TARGET_GROUP_FILL_B
-        )
+        # Alternate target cell colors by contiguous map block in schedule order.
+        # If the map group changes from the previous row, flip color; if not,
+        # keep the same color. This makes every map transition visually obvious
+        # while still using only two colors.
+        map_group = TARGET_TO_MAP.get(b.target, -1)
+        if prev_map_group is not None and map_group != prev_map_group:
+            target_fill_idx = 1 - target_fill_idx
+        ws.cell(row=ws.max_row, column=2).fill = target_fills[target_fill_idx]
+        prev_map_group = map_group
         # Bold the participant cells where this battle credits a quest.
         for j, m in enumerate(members, start=5):
             if m in bm_set:

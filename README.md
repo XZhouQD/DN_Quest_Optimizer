@@ -69,7 +69,7 @@ python -m src.main --input-dir input --out schedule.xlsx
   - ordered battles
   - switch-highlighted participant cells (orange)
   - quest-credit participant names in bold
-  - target background coloring for map-group separation (two alternating colors: light grey and light pink)
+  - target background coloring alternates on each map-group switch (two colors: light grey and light pink)
 - `Summary` sheet
   - per-member completed quests, battles, distinct characters, and switches
 - `Legend` sheet
