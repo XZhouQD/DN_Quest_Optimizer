@@ -79,11 +79,27 @@ python -m src.main --input-dir input --out schedule.xlsx
 - `Legend` sheet
   - explanations of symbols and color usage
 
+## Update remaining tickets after execution
+
+After you finish the scheduled battles in game, you can subtract consumed
+tickets from the original `<member>_票.xlsx` files:
+
+```powershell
+python update_tickets.py --input-dir input --schedule schedule.xlsx --out-dir remaining_tickets
+```
+
+This writes updated ticket workbooks to `remaining_tickets/` and leaves the
+original input files untouched. To overwrite the original ticket files instead:
+
+```powershell
+python update_tickets.py --input-dir input --schedule schedule.xlsx --in-place
+```
+
 ## Scheduling model highlights
 
 - Ticket constraints are strict (dedicated + wildcard stock never goes negative).
 - Quest credit is counted once per `(member, character, target)` per week.
-- Objective is lexicographic: total first, balance second.
+- Objective is lexicographic: total first, balance second, fewer battles third.
 - Post-processing removes zero-credit battles and optimizes order.
 - Ordering cost combines:
   - character switch cost
@@ -113,16 +129,19 @@ DN_Tools/
 ├── run.py
 ├── run.bat
 ├── generate_templates.py
+├── update_tickets.py
 ├── src/
 │   ├── config.py
 │   ├── optimize.py
 │   ├── schedule.py
 │   ├── templates.py
+│   ├── update_tickets.py
 │   └── main.py
 └── tests/
     ├── generate_test_case.py
     ├── validate_schedule.py
     ├── test_dynamic_features.py
+  ├── test_update_tickets.py
     ├── count_reteams.py
     └── show_reteams.py
 ```

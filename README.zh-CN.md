@@ -77,11 +77,25 @@ python -m src.main --input-dir input --out schedule.xlsx
 - `Legend`
   - 颜色与符号说明
 
+## 执行后更新剩余门票
+
+实际打完排程后，可以把 `schedule.xlsx` 中消耗的门票扣回原始 `<member>_票.xlsx`：
+
+```powershell
+python update_tickets.py --input-dir input --schedule schedule.xlsx --out-dir remaining_tickets
+```
+
+默认会把更新后的票表写到 `remaining_tickets/`，不会覆盖原始输入。若确认要直接覆盖原始票表：
+
+```powershell
+python update_tickets.py --input-dir input --schedule schedule.xlsx --in-place
+```
+
 ## 模型与排序说明
 
 - 门票约束严格生效（专用票与通用票都不会透支）。
 - 周委托按 `(成员, 角色, 目标)` 每周最多记一次。
-- 目标函数为字典序：先总完成数，再平衡性。
+- 目标函数为字典序：先总完成数，再平衡性，最后尽量减少战斗场数。
 - 后处理会移除无贡献战斗并重新排序。
 - 排序成本包含：
   - 角色切换成本
@@ -111,16 +125,19 @@ DN_Tools/
 ├── run.py
 ├── run.bat
 ├── generate_templates.py
+├── update_tickets.py
 ├── src/
 │   ├── config.py
 │   ├── optimize.py
 │   ├── schedule.py
 │   ├── templates.py
+│   ├── update_tickets.py
 │   └── main.py
 └── tests/
     ├── generate_test_case.py
     ├── validate_schedule.py
     ├── test_dynamic_features.py
+  ├── test_update_tickets.py
     ├── count_reteams.py
     └── show_reteams.py
 ```

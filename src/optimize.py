@@ -270,7 +270,10 @@ def solve(
                 <= wild_tickets[(m, c)]
             )
 
-    # Objective: lexicographic (total first, balance as tiebreaker).
+    # Objective: lexicographic:
+    #   1) maximize total completed quests
+    #   2) maximize the minimum per-member completed quests (soft balance)
+    #   3) minimize battle count
     # `done[m,c,t]` = 1 if the weekly quest (m,c,t) is actually completed.
     # A quest counts at most once regardless of how many battles (m,c) joins
     # at target t.
@@ -296,14 +299,20 @@ def solve(
     for m in members:
         prob += min_member <= member_quests[m]
 
-    # Scale total_quests high so it dominates; min_member acts only as a
-    # tiebreaker among solutions that achieve the same total.
+    active_count = pulp.lpSum(active[(t, s)] for t in TARGETS for s in slots[t])
+
+    # Scale objective terms so total_quests dominates balance, and balance
+    # dominates battle count. This prevents extra wildcard tickets from making
+    # CBC pick a same-quest, same-balance solution with unnecessary battles.
     # Upper bound on min_member: max per-member quest count.
     max_per_member = max(
         (sum(1 for c in chars_by_member[m] for t in TARGETS if quests[(m, c, t)] == 1))
         for m in members
     ) or 1
-    prob += (max_per_member + 1) * total_quests + min_member
+    max_active = sum(len(slots[t]) for t in TARGETS)
+    balance_weight = max_active + 1
+    total_weight = (max_per_member + 1) * balance_weight
+    prob += total_weight * total_quests + balance_weight * min_member - active_count
 
     solver = pulp.PULP_CBC_CMD(msg=1 if verbose else 0, timeLimit=time_limit_sec)
     prob.solve(solver)
