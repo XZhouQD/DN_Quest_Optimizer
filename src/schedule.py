@@ -221,41 +221,72 @@ def _fill_wildcards(
 
 
 def _break_full_reteams(battles: List[Battle]) -> List[Battle]:
-    """Local pairwise swap pass that removes full-reteam transitions.
+    """Local ordering pass that reduces full-reteam transitions.
 
-    Looks at each adjacent boundary (i, i+1). If it is a full re-team, tries
-    swapping battle i+1 with any later battle j; accepts the first swap that
-    strictly reduces the total transition score (i.e. breaks the full re-team
-    without creating another one and without worsening overall switches).
-    Runs until no beneficial swap is found, capped at a few sweeps.
+    Looks at each adjacent boundary (i-1, i). If it is a full re-team, tries
+    two local repairs:
+      * swap battle i with another battle
+      * relocate another battle into the boundary as a bridge
+
+    The relocate case matters when two required battles must both happen but
+    should not be adjacent; a bridge battle sharing a character with each side
+    can avoid the campus re-team detour.
     """
     if len(battles) < 2:
         return battles
 
+    def is_full_reteam(prev: Battle, cur: Battle) -> bool:
+        shared = sum(1 for m in cur.participants if m in prev.participants)
+        return shared > 0 and _switch_cost(prev, cur) == shared
+
     def total_score(bs: List[Battle]) -> int:
         return sum(_transition_score(bs[i - 1], bs[i]) for i in range(1, len(bs)))
 
-    for _ in range(5):  # a handful of sweeps is enough in practice
+    def full_reteam_count(bs: List[Battle]) -> int:
+        return sum(1 for i in range(1, len(bs)) if is_full_reteam(bs[i - 1], bs[i]))
+
+    def score_key(bs: List[Battle]) -> tuple[int, int]:
+        return (full_reteam_count(bs), total_score(bs))
+
+    for _ in range(10):
         improved = False
         i = 1
         while i < len(battles):
-            # Detect full re-team at boundary (i-1, i)
             prev, cur = battles[i - 1], battles[i]
-            shared = sum(1 for m in cur.participants if m in prev.participants)
-            if shared > 0 and _switch_cost(prev, cur) == shared:
-                base = total_score(battles)
-                best_j = None
-                best_score = base
-                for j in range(i + 1, len(battles)):
-                    battles[i], battles[j] = battles[j], battles[i]
-                    s = total_score(battles)
-                    if s < best_score:
-                        best_score = s
-                        best_j = j
-                    battles[i], battles[j] = battles[j], battles[i]
-                if best_j is not None:
-                    battles[i], battles[best_j] = battles[best_j], battles[i]
+            if is_full_reteam(prev, cur):
+                base_key = score_key(battles)
+                best_seq: List[Battle] | None = None
+                best_key = base_key
+
+                # Swap the right-side battle with any other battle.
+                for j in range(len(battles)):
+                    if j in (i - 1, i):
+                        continue
+                    candidate = battles.copy()
+                    candidate[i], candidate[j] = candidate[j], candidate[i]
+                    candidate_key = score_key(candidate)
+                    if candidate_key < best_key:
+                        best_key = candidate_key
+                        best_seq = candidate
+
+                # Relocate any other battle into the full-reteam boundary as a bridge.
+                for j in range(len(battles)):
+                    if j in (i - 1, i):
+                        continue
+                    candidate = battles.copy()
+                    bridge = candidate.pop(j)
+                    insert_at = i - 1 if j < i else i
+                    candidate.insert(insert_at, bridge)
+                    candidate_key = score_key(candidate)
+                    if candidate_key < best_key:
+                        best_key = candidate_key
+                        best_seq = candidate
+
+                if best_seq is not None:
+                    battles = best_seq
                     improved = True
+                    i = 1
+                    continue
             i += 1
         if not improved:
             break
@@ -355,8 +386,13 @@ def finalize_schedule(
         _solidify_wildcards(battles, members, quests)
         battles = order_battles(battles)
         _fill_wildcards(battles, members, chars_by_member, quests)
+        battles = _break_full_reteams(battles)
+        _solidify_wildcards(battles, members, quests)
+        _fill_wildcards(battles, members, chars_by_member, quests)
+        battles = _break_full_reteams(battles)
     else:
         battles = order_battles(battles)
+        battles = _break_full_reteams(battles)
     return battles
 
 
@@ -549,6 +585,7 @@ def _reduce_switches_multiset(
 HEADER_FILL = PatternFill("solid", fgColor="FFD9E1F2")
 HEADER_FONT = Font(bold=True)
 SWITCH_FILL = PatternFill("solid", fgColor="FFFCE4D6")  # highlight switches
+FULL_TEAM_SWITCH_FILL = PatternFill("solid", fgColor="FFFF9999")  # full-team switch
 BOLD_FONT = Font(bold=True)
 TARGET_GROUP_FILL_A = PatternFill("solid", fgColor="FFF2F2F2")  # light grey
 TARGET_GROUP_FILL_B = PatternFill("solid", fgColor="FFFFE6EA")  # light pink
@@ -631,11 +668,18 @@ def write_schedule(
             if m in bm_set:
                 ws.cell(row=ws.max_row, column=j).font = BOLD_FONT
         if prev is not None:
+            switched_members = [
+                m for m in members
+                if prev.participants.get(m) and b.participants.get(m)
+                and prev.participants[m] != b.participants[m]
+            ]
+            full_team_switch = len(switched_members) == len(members)
+            switch_fill = FULL_TEAM_SWITCH_FILL if full_team_switch else SWITCH_FILL
             for j, m in enumerate(members, start=5):
                 pc = prev.participants.get(m)
                 nc = b.participants.get(m)
                 if pc and nc and pc != nc:
-                    ws.cell(row=ws.max_row, column=j).fill = SWITCH_FILL
+                    ws.cell(row=ws.max_row, column=j).fill = switch_fill
         prev = b
 
     for col in range(1, len(headers) + 1):
@@ -682,6 +726,7 @@ def write_schedule(
     # Legend
     ws3 = wb.create_sheet("Legend")
     ws3.append(["Orange cell in Schedule = this member switches character vs previous battle."])
+    ws3.append(["Red switch cells = every listed member switches character vs previous battle."])
     ws3.append(["Bold character name = this battle credits that character's weekly quest."])
     ws3.append(["ticket_source = member:character who spends 1 ticket for that battle."])
     ws3.append(["— = member sits out (only possible for 双生, team size = 2)."])
